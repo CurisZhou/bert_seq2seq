@@ -126,6 +126,25 @@ class BertEmbeddings(nn.Module):
         embeddings = self.dropout(embeddings)
         return embeddings
 
+    
+ 
+ '''attention_mask生成参考代码'''   
+# 提前设定好尺寸attention_score_size为(batch_size,num_attention_heads,seq_len,seq_len).
+attention_score_size = (3,12,6,6)
+
+# attention_mask张量中为0处表示非[pad]特殊符,为1处表示此处为填充特殊符[pad],
+# 此时attention_mask张量的形状为(batch_size, seq_len).
+attention_mask = torch.randint(0,2,(3,6))
+# 将attention_mask张量中填充特殊符[pad]处的1变为极大的负数-10000.
+attention_mask[attention_mask==1] = -10000
+
+# 将attention_mask张量的形状扩展为和size一样的形状,即从(batch_size, seq_len)扩展为与attention_score_size
+# 一样的形状(batch_size,num_attention_heads,seq_len,attention_head_size).
+attention_mask = attention_mask.unsqueeze(1).repeat(1,attention_score_size[2],1).unsqueeze(1).repeat(1,attention_score_size[1],1,1)
+print("Shape of the attention_mask: {}".format(attention_mask.shape))
+print(attention_mask)
+
+
 
 class BertSelfAttention(nn.Module):
     def __init__(self, config: BertConfig):
@@ -150,7 +169,7 @@ class BertSelfAttention(nn.Module):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(*new_x_shape)
 
-        ## 最后xshape (batch_size, num_attention_heads, seq_len, head_size)
+        ## 最后x的形状为(batch_size, num_attention_heads, seq_len, attention_head_size)
         return x.permute(0, 2, 1, 3)
 
     def forward(
@@ -162,19 +181,25 @@ class BertSelfAttention(nn.Module):
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
         mixed_value_layer = self.value(hidden_states)
-
+        
+        # query_layer、key_layer与value_layer三个张量的形状都为(batch_size, num_attention_heads, seq_len, attention_head_size)
         query_layer = self.transpose_for_scores(mixed_query_layer)
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
+        # 此时attention_scores张量的形状为(batch_size, num_attention_heads, seq_len, seq_len).
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         
+        # 此时经过BertModel forward()中的提前处理,attention_mask张量的形状和attention_scores张量的形状一样,都为
+        # (batch_size, num_attention_heads, seq_len, seq_len); 提前处理的操作即为将attention_mask张量
+        # 原本的形状(batch_size, seq_len)扩展为(batch_size, num_attention_heads, seq_len, seq_len).
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         attention_scores = attention_scores + attention_mask
 
         # Normalize the attention scores to probabilities.
+        # attention_probs张量的形状依然为(batch_size, num_attention_heads, seq_len, seq_len).
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
 
         # This is actually dropping out entire tokens to attend to, which might
@@ -182,9 +207,15 @@ class BertSelfAttention(nn.Module):
         attention_probs = self.dropout(attention_probs)
 
         # 注意力加权
+        # 此时经过注意力加权后的context_layer张量的形状为(batch_size, num_attention_heads, seq_len, attention_head_size).
         context_layer = torch.matmul(attention_probs, value_layer)
+        
         # 把加权后的V reshape, 得到[batch_size, length, embedding_dimension]
+        # 此时context_layer张量的形状变为(batch_size, seq_len, num_attention_heads, attention_head_size).
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        
+        # 下面两步操作会将context_layer张量的形状变为(batch_size, seq_len, num_attention_heads*attention_head_size),
+        # 即(batch_size, seq_len, all_head_size).
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
 
