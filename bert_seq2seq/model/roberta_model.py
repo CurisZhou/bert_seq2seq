@@ -132,13 +132,13 @@ class BertEmbeddings(nn.Module):
 # 提前设定好尺寸attention_score_size为(batch_size,num_attention_heads,seq_len,seq_len).
 attention_score_size = (3,12,6,6)
 
-# attention_mask张量中为0处表示非[pad]特殊符,为1处表示此处为填充特殊符[pad],
+# attention_mask张量中为0处表示[pad]特殊符,为1处表示此处为非填充特殊符[pad],
 # 此时attention_mask张量的形状为(batch_size, seq_len).
 attention_mask = torch.randint(0,2,(3,6))
-# 将attention_mask张量中填充特殊符[pad]处的1变为极大的负数-10000.
+# 将attention_mask张量中填充特殊符[pad]处的0变为极大的负数-10000.
 attention_mask[attention_mask==1] = -10000
 
-# 将attention_mask张量的形状扩展为和size一样的形状,即从(batch_size, seq_len)扩展为与attention_score_size
+# 将attention_mask张量的形状扩展为和attention_score_size一样的形状,即从(batch_size, seq_len)扩展为与attention_score_size
 # 一样的形状(batch_size,num_attention_heads,seq_len,attention_head_size).
 attention_mask = attention_mask.unsqueeze(1).repeat(1,attention_score_size[2],1).unsqueeze(1).repeat(1,attention_score_size[1],1,1)
 print("Shape of the attention_mask: {}".format(attention_mask.shape))
@@ -178,6 +178,9 @@ class BertSelfAttention(nn.Module):
         attention_mask,
         output_attentions=False
     ):
+        # 此时输入进来的hidden_states张量形状为(batch_size, seq_len, hidden_size),
+        # 此时mixed_query_layer、mixed_key_layer与mixed_value_layer三个张量的形状都为
+        # (batch_size, seq_len, all_head_size).
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
         mixed_value_layer = self.value(hidden_states)
