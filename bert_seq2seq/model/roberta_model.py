@@ -356,9 +356,12 @@ class BertPooler(nn.Module):
     def forward(self, hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
+        # 此时first_token_tensor张量的形状为(batch_size, 1, hidden_size)
         first_token_tensor = hidden_states[:, 0]
         pooled_output = self.dense(first_token_tensor)
         pooled_output = self.activation(pooled_output)
+        
+        # 此时pooled_output张量的形状也为(batch_size, 1, hidden_size).
         return pooled_output
 
 
@@ -393,30 +396,49 @@ class BertLMPredictionHead(nn.Module):
 
     def forward(self, hidden_states):
         hidden_states = self.transform(hidden_states)
+        
+        # 此时经过self.decoder层后的hidden_states张量的形状由(batch_size, seq_len, hidden_size)变为
+        # (batch_size, seq_len, vocab_size).
         hidden_states = self.decoder(hidden_states)
+        
+        # 此时hidden_states张量的形状为(batch_size, seq_len, vocab_size).
         return hidden_states
 
 
+# BertOnlyMLMHead()类为仅进行masked language model预训练任务的类.
 class BertOnlyMLMHead(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.predictions = BertLMPredictionHead(config)
 
     def forward(self, sequence_output):
+        # 此时经过self.predictions(即BertLMPredictionHead(config))层的sequence_output张量形状由(batch_size, seq_len, hidden_size)变为
+        # 形状为(batch_size, seq_len, vocab_size)的张量prediction_scores.
         prediction_scores = self.predictions(sequence_output)
+        
+        # 此时prediction_scores张量的形状为(batch_size, seq_len, vocab_size).
         return prediction_scores
 
 
+# BertOnlyNSPHead()类为仅进行next sentence prediction预训练任务的类.
 class BertOnlyNSPHead(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.seq_relationship = nn.Linear(config.hidden_size, 2)
 
     def forward(self, pooled_output):
+        # 此时输入进来的pooled_output张量的形状为(batch_size, 1, hidden_size)
+        
+        # 此时经过self.seq_relationship(nn.Linear(config.hidden_size, 2))层后的pooled_output张量形状由(batch_size, 1, hidden_size)变为
+        # 形状为(batch_size, 1, 2)的张量seq_relationship_score.
         seq_relationship_score = self.seq_relationship(pooled_output)
+        
+        # 此时seq_relationship_score张量的形状为(batch_size, 1, 2).
         return seq_relationship_score
 
-
+    
+# BertPreTrainingHeads()为同时进行masked language model预训练任务与
+# next sentence prediction预训练任务这两种预训练任务的类.
 class BertPreTrainingHeads(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -424,8 +446,16 @@ class BertPreTrainingHeads(nn.Module):
         self.seq_relationship = nn.Linear(config.hidden_size, 2)
 
     def forward(self, sequence_output, pooled_output):
+        # 此时输入进来的sequence_output张量形状为(batch_size, seq_len, hidden_size);
+        # 此时输入进来的pooled_output张量的形状为(batch_size, 1, hidden_size)
+        
+        # 此时经过self.predictions(即BertLMPredictionHead(config))层的sequence_output张量形状由(batch_size, seq_len, hidden_size)变为
+        # 形状为(batch_size, seq_len, vocab_size)的张量prediction_scores.
+        # 此时经过self.seq_relationship(nn.Linear(config.hidden_size, 2))层后的pooled_output张量形状由(batch_size, 1, hidden_size)变为
+        # 形状为(batch_size, 1, 2)的张量seq_relationship_score.
         prediction_scores = self.predictions(sequence_output)
         seq_relationship_score = self.seq_relationship(pooled_output)
+        
         return prediction_scores, seq_relationship_score
 
 
