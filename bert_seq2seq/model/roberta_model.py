@@ -120,10 +120,14 @@ class BertEmbeddings(nn.Module):
         inputs_embeds = self.word_embeddings(input_ids)
         position_embeddings = self.position_embeddings(position_ids)
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
-
+        
+        # 此时inputs_embeds、position_embeddings与token_type_embeddings三个张量的形状都为(batch_size, seq_len, hidden_size).
+        # 三个嵌入张量加和后的张量embeddings的形状也为(batch_size, seq_len, hidden_size).
         embeddings = inputs_embeds + position_embeddings + token_type_embeddings
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
+        
+        # embeddings张量的形状为(batch_size, seq_len, hidden_size).
         return embeddings
 
     
@@ -136,7 +140,7 @@ attention_score_size = (3,12,6,6)
 # 此时attention_mask张量的形状为(batch_size, seq_len).
 attention_mask = torch.randint(0,2,(3,6))
 # 将attention_mask张量中填充特殊符[pad]处的0变为极大的负数-10000.
-attention_mask[attention_mask==1] = -10000
+attention_mask[attention_mask==0] = -10000
 
 # 将attention_mask张量的形状扩展为和attention_score_size一样的形状,即从(batch_size, seq_len)扩展为与attention_score_size
 # 一样的形状(batch_size,num_attention_heads,seq_len,attention_head_size).
@@ -232,8 +236,9 @@ class BertSelfOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        
 
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
@@ -271,13 +276,16 @@ class BertIntermediate(nn.Module):
         hidden_states = self.intermediate_act_fn(hidden_states)
         return hidden_states
 
+    
 class BertOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
+        
         self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
-        self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-
+        self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        
+        
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
@@ -300,14 +308,14 @@ class BertLayer(nn.Module):
     ):
         attention_output, attention_matrix = self.attention(hidden_states, attention_mask, output_attentions=output_attentions)
         intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
-        return layer_output, attention_matrix
+        layernorm_output = self.output(intermediate_output, attention_output)
+        return layernorm_output, attention_matrix
 
 
 class BertEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
+        self.bert_enc_layers = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
 
     def forward(
         self,
@@ -316,17 +324,22 @@ class BertEncoder(nn.Module):
         output_all_encoded_layers=True,
         output_attentions=False
     ):
+        
         all_encoder_layers = []
         all_attention_matrices = []
-        for i, layer_module in enumerate(self.layer):
+        
+        for i, each_bert_layer_module in enumerate(self.bert_enc_layers):
             
-            layer_output, attention_matrix = layer_module(
+            each_bert_layer_output, attention_matrix = each_bert_layer_module(
                 hidden_states, attention_mask, output_attentions=output_attentions
             )
-            hidden_states = layer_output
+            
+            hidden_states = each_bert_layer_output
+            
             if output_all_encoded_layers:
                 all_encoder_layers.append(hidden_states)
                 all_attention_matrices.append(attention_matrix)
+                
         if not output_all_encoded_layers:
             all_encoder_layers.append(hidden_states)
             all_attention_matrices.append(attention_matrix)
